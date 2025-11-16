@@ -1,27 +1,21 @@
-
 {
-  "name": "bridgepay-server",
+  "name": "bridgepay-ethereum-server",
   "version": "1.0.0",
-  "description": "BridgePay REST API Server",
-  "main": "src/index.js",
+  "description": "REST API for BridgePay Ethereum Integration",
+  "main": "server.js",
   "scripts": {
-    "start": "ts-node src/index.ts",
-    "dev": "nodemon src/index.ts"
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
-    "ethers": "^5.7.2",
-    "uuid": "^9.0.0",
-    "dotenv": "^16.0.3"
+    "body-parser": "^1.20.2",
+    "dotenv": "^16.3.1",
+    "uuid": "^9.0.1",
+    "ethers": "^6.9.0"
   },
   "devDependencies": {
-    "@types/express": "^4.17.17",
-    "@types/cors": "^2.8.13",
-    "@types/uuid": "^9.0.2",
-    "@types/node": "^18.16.0",
-    "ts-node": "^10.9.1",
-    "typescript": "^5.0.4",
-    "nodemon": "^2.0.22"
+    "nodemon": "^3.0.1"
   }
 }
