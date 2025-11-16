@@ -295,3 +295,71 @@ app.listen(PORT, () => {
   console.log(`📡 Health: http://localhost:${PORT}/health`);
   console.log(`📝 API Docs: http://localhost:${PORT}/api-docs`);
 });
+// Auto-fund users on startup (add this BEFORE app.listen)
+async function autoFundUsers() {
+  // Get users from environment variables
+  const usersToFund = process.env.AUTO_FUND_USERS;
+  
+  if (!usersToFund) {
+    console.log('ℹ️  No AUTO_FUND_USERS configured');
+    return;
+  }
+
+  try {
+    // Parse format: "address1:amount1,address2:amount2"
+    // Example: "0xF750...a60:10,0x1234...5678:5"
+    const users = usersToFund.split(',');
+    
+    console.log('💰 Auto-funding users on startup...');
+    
+    for (const userEntry of users) {
+      const [address, amountETH] = userEntry.trim().split(':');
+      
+      if (!ethers.utils.isAddress(address)) {
+        console.error(`❌ Invalid address: ${address}`);
+        continue;
+      }
+
+      try {
+        console.log(`   Funding ${address} with ${amountETH} ETH...`);
+        
+        // Check current balance
+        const currentBalance = await contract.getBalance(address);
+        const currentETH = parseFloat(ethers.utils.formatEther(currentBalance));
+        const targetETH = parseFloat(amountETH);
+        
+        // Only fund if balance is less than target
+        if (currentETH < targetETH) {
+          const amountToAdd = targetETH - currentETH;
+          
+          const tx = await contract.deposit({
+            value: ethers.utils.parseEther(amountToAdd.toString())
+          });
+          
+          await tx.wait();
+          
+          console.log(`   ✅ Funded ${address}: ${amountToAdd} ETH (TX: ${tx.hash})`);
+        } else {
+          console.log(`   ℹ️  ${address} already has ${currentETH} ETH (target: ${targetETH})`);
+        }
+        
+      } catch (error: any) {
+        console.error(`   ❌ Failed to fund ${address}:`, error.message);
+      }
+    }
+    
+    console.log('✅ Auto-funding complete!\n');
+    
+  } catch (error: any) {
+    console.error('❌ Auto-funding error:', error.message);
+  }
+}
+
+// Call it before starting the server
+autoFundUsers().then(() => {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`🚀 BridgePay Server running on port ${PORT}`);
+    console.log(`📡 Health: http://localhost:${PORT}/health`);
+  });
+});
