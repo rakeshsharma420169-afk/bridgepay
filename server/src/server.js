@@ -24,7 +24,7 @@ const CONFIG_FILE = path.join(__dirname, '..', 'blockchain_config.json');       
                                                         // 24
 // RPC URL from environment                              // 25
 const RPC_URL = process.env.RPC_URL;                    // 26
-//const NETWORK = process.env.NETWORK || 'sepolia';       // 27
+const NETWORK = process.env.NETWORK || 'http://127.0.0.1:8545';       // 27
 const CHAIN_ID = process.env.CHAIN_ID || 31337;      // 28
                                                         // 29
 // Helper function to read JSON file                     // 30
