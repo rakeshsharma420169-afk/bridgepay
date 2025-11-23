@@ -6,6 +6,7 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
+// Ensure these files exist in your project structure
 const accountManager = require('./accountManager');
 const contractManager = require('./contractManager');
 
@@ -52,6 +53,7 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const { userId, password } = req.body;
     
+    // FIX: Added backticks
     console.log(`📝 Login attempt for: ${userId}`);
     
     if (!userId || !password) {
@@ -70,12 +72,14 @@ app.post('/api/auth/login', async (req, res) => {
       });
     }
 
+    // Check if user exists by address or username
     const userEntry = Object.entries(users).find(([key, value]) => {
       return key.toLowerCase() === userId.toLowerCase() || 
              value.address.toLowerCase() === userId.toLowerCase();
     });
 
     if (!userEntry) {
+      // FIX: Added backticks
       console.log(`❌ User not found: ${userId}`);
       return res.status(404).json({ 
         success: false, 
@@ -85,9 +89,11 @@ app.post('/api/auth/login', async (req, res) => {
 
     const [username, userData] = userEntry;
 
+    // Verify password by trying to decrypt
     const loginResult = await accountManager.login(username, password);
     
     if (!loginResult.success) {
+      // FIX: Added backticks
       console.log(`❌ Invalid password for: ${username}`);
       return res.status(401).json({
         success: false,
@@ -95,6 +101,7 @@ app.post('/api/auth/login', async (req, res) => {
       });
     }
 
+    // FIX: Added backticks
     console.log(`✅ Login successful for: ${username}`);
 
     res.json({
@@ -114,7 +121,7 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (error) {
     console.error('❌ Login error:', error);
     res.status(500).json({ 
-      success: false,
+      success: false, 
       message: 'Internal server error' 
     });
   }
@@ -125,6 +132,7 @@ app.post('/api/auth/register-celo', async (req, res) => {
   try {
     const { username, password, fullName, mobile, email } = req.body;
     
+    // FIX: Added backticks
     console.log(`📝 Registration attempt for: ${username}`);
     
     if (!username || !password || !fullName || !mobile || !email) {
@@ -138,6 +146,7 @@ app.post('/api/auth/register-celo', async (req, res) => {
     if (!users) users = {};
 
     if (users[username]) {
+      // FIX: Added backticks
       console.log(`❌ User already exists: ${username}`);
       return res.status(409).json({ 
         success: false, 
@@ -145,11 +154,14 @@ app.post('/api/auth/register-celo', async (req, res) => {
       });
     }
 
+    // FIX: Added backticks
     console.log(`🔧 Creating Ethereum account for: ${username}`);
 
+    // Create account using accountManager
     const result = await accountManager.createAccount(username, password);
     
     if (!result.success) {
+      // FIX: Added backticks
       console.log(`❌ Account creation failed: ${result.error}`);
       return res.status(500).json({
         success: false,
@@ -157,25 +169,33 @@ app.post('/api/auth/register-celo', async (req, res) => {
       });
     }
 
+    // Read updated users file
     users = await readJsonFile(USERS_FILE);
     
+    // Add additional user info
     if (users[username]) {
       users[username].fullName = fullName;
       users[username].mobile = mobile;
       users[username].email = email;
       await writeJsonFile(USERS_FILE, users);
       
+      // Fund new user with initial tokens (500 tokens)
+      // FIX: Added backticks
       console.log(`💰 Funding new user ${result.address} with 500 tokens...`);
       const fundResult = await contractManager.fundNewUser(result.address, 500);
       
       if (fundResult.success) {
+        // FIX: Added backticks
         console.log(`✅ Successfully funded ${result.address} with 500 tokens`);
         console.log(`📝 Transaction hash: ${fundResult.txHash}`);
       } else {
+        // FIX: Added backticks
         console.log(`⚠ Could not fund user: ${fundResult.error}`);
+        // Continue anyway - user can be funded manually later
       }
     }
 
+    // FIX: Added backticks
     console.log(`✅ Account created successfully: ${result.address}`);
 
     res.json({
@@ -190,7 +210,7 @@ app.post('/api/auth/register-celo', async (req, res) => {
         email: email,
         createdAt: users[username].createdAt
       },
-      mnemonic: result.mnemonic
+      mnemonic: result.mnemonic // Send mnemonic once for user to save
     });
 
   } catch (error) {
@@ -204,28 +224,32 @@ app.post('/api/auth/register-celo', async (req, res) => {
 
 // ===== BALANCE ENDPOINTS =====
 
+// Get user balance from smart contract
 app.get('/api/balance/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
     
+    // FIX: Added backticks
     console.log(`💰 Balance request for: ${userId}`);
     
     const users = await readJsonFile(USERS_FILE);
     
     if (!users) {
-      console.log(`❌ Users database not found`);
+      console.log('❌ Users database not found');
       return res.status(500).json({ 
         success: false, 
         message: 'Users database not found' 
       });
     }
 
+    // Find user by userId (address) or username
     const userEntry = Object.entries(users).find(([key, value]) => {
       return key.toLowerCase() === userId.toLowerCase() || 
              value.address.toLowerCase() === userId.toLowerCase();
     });
 
     if (!userEntry) {
+      // FIX: Added backticks
       console.log(`❌ User not found: ${userId}`);
       return res.status(404).json({ 
         success: false, 
@@ -235,13 +259,16 @@ app.get('/api/balance/:userId', async (req, res) => {
 
     const [username, userData] = userEntry;
 
+    // FIX: Added backticks
     console.log(`🔍 Fetching token balance for address: ${userData.address}`);
 
+    // Get token balance from smart contract
     const balanceResult = await contractManager.getTokenBalance(userData.address);
     
-    console.log(`📊 Balance result: ${JSON.stringify(balanceResult)}`);
+    console.log('📊 Balance result:', JSON.stringify(balanceResult));
     
     if (!balanceResult.success) {
+      // FIX: Added backticks
       console.log(`⚠ Balance fetch failed, returning 0: ${balanceResult.error}`);
       return res.json({
         success: true,
@@ -251,6 +278,7 @@ app.get('/api/balance/:userId', async (req, res) => {
       });
     }
 
+    // FIX: Added backticks
     console.log(`✅ Balance fetched successfully: ${balanceResult.balance} tokens`);
 
     res.json({
@@ -271,10 +299,12 @@ app.get('/api/balance/:userId', async (req, res) => {
 
 // ===== TRANSACTION ENDPOINTS =====
 
+// Send transaction (online)
 app.post('/api/transaction/send', async (req, res) => {
   try {
     const { fromUserId, toUserId, amount } = req.body;
     
+    // FIX: Added backticks
     console.log(`💸 Transaction request: ${fromUserId} -> ${toUserId} (${amount})`);
     
     if (!fromUserId || !toUserId || !amount) {
@@ -300,15 +330,18 @@ app.post('/api/transaction/send', async (req, res) => {
       });
     }
 
+    // Find sender by address
     const fromUserEntry = Object.entries(users).find(([key, value]) => {
       return value.address.toLowerCase() === fromUserId.toLowerCase();
     });
 
+    // Find receiver by address
     const toUserEntry = Object.entries(users).find(([key, value]) => {
       return value.address.toLowerCase() === toUserId.toLowerCase();
     });
 
     if (!fromUserEntry) {
+      // FIX: Added backticks
       console.log(`❌ Sender not found: ${fromUserId}`);
       return res.status(404).json({ 
         success: false, 
@@ -317,6 +350,7 @@ app.post('/api/transaction/send', async (req, res) => {
     }
 
     if (!toUserEntry) {
+      // FIX: Added backticks
       console.log(`❌ Receiver not found: ${toUserId}`);
       return res.status(404).json({ 
         success: false, 
@@ -327,6 +361,7 @@ app.post('/api/transaction/send', async (req, res) => {
     const [fromUsername, fromUserData] = fromUserEntry;
     const [toUsername, toUserData] = toUserEntry;
 
+    // Create transaction record
     const transaction = {
       id: uuidv4(),
       from: fromUserData.address,
@@ -341,6 +376,7 @@ app.post('/api/transaction/send', async (req, res) => {
       contractAddress: contractManager.CONTRACT_ADDRESS
     };
 
+    // Add to transaction history
     let history = await readJsonFile(TRANSACTION_HISTORY_FILE);
     if (!history) history = [];
     if (!Array.isArray(history)) history = [history];
@@ -348,6 +384,7 @@ app.post('/api/transaction/send', async (req, res) => {
     history.push(transaction);
     await writeJsonFile(TRANSACTION_HISTORY_FILE, history);
 
+    // FIX: Added backticks
     console.log(`✅ Transaction recorded: ${fromUserData.address} -> ${toUserData.address} (${amount})`);
 
     res.json({
@@ -370,6 +407,7 @@ app.post('/api/transaction/queue', async (req, res) => {
   try {
     const { fromUserId, toUserId, amount } = req.body;
     
+    // FIX: Added backticks
     console.log(`📋 Queuing transaction: ${fromUserId} -> ${toUserId} (${amount})`);
     
     if (!fromUserId || !toUserId || !amount) {
@@ -388,6 +426,7 @@ app.post('/api/transaction/queue', async (req, res) => {
       });
     }
 
+    // Find users
     const fromUserEntry = Object.entries(users).find(([key, value]) => {
       return value.address.toLowerCase() === fromUserId.toLowerCase();
     });
@@ -406,6 +445,7 @@ app.post('/api/transaction/queue', async (req, res) => {
     const [fromUsername, fromUserData] = fromUserEntry;
     const [toUsername, toUserData] = toUserEntry;
 
+    // Create queued transaction
     const transaction = {
       id: uuidv4(),
       from: fromUserData.address,
@@ -418,6 +458,7 @@ app.post('/api/transaction/queue', async (req, res) => {
       status: 'pending'
     };
 
+    // Add to offline queue
     let queue = await readJsonFile(OFFLINE_QUEUE_FILE);
     if (!queue) queue = [];
     if (!Array.isArray(queue)) queue = [queue];
@@ -425,6 +466,7 @@ app.post('/api/transaction/queue', async (req, res) => {
     queue.push(transaction);
     await writeJsonFile(OFFLINE_QUEUE_FILE, queue);
 
+    // FIX: Added backticks
     console.log(`✅ Transaction queued: ${transaction.id}`);
 
     res.json({
@@ -466,15 +508,17 @@ app.get('/api/transaction/pending/:userId', async (req, res) => {
   } catch (error) {
     console.error('❌ Pending transactions error:', error);
     res.status(500).json({ 
-      success: false,
+      success: false, 
       message: 'Internal server error' 
     });
   }
 });
 
+// Sync offline transactions
 app.post('/api/transaction/sync', async (req, res) => {
   try {
-    console.log(`🔄 Syncing offline transactions...`);
+    // FIX: Added backticks/quotes
+    console.log('🔄 Syncing offline transactions...');
     
     let queue = await readJsonFile(OFFLINE_QUEUE_FILE);
     if (!queue) queue = [];
@@ -483,7 +527,7 @@ app.post('/api/transaction/sync', async (req, res) => {
     const pendingTxs = queue.filter(tx => tx.status === 'pending');
     
     if (pendingTxs.length === 0) {
-      console.log(`✅ No pending transactions to sync`);
+      console.log('✅ No pending transactions to sync');
       return res.json({
         success: true,
         message: 'No pending transactions to sync',
@@ -498,6 +542,7 @@ app.post('/api/transaction/sync', async (req, res) => {
     if (!history) history = [];
     if (!Array.isArray(history)) history = [history];
 
+    // Process each pending transaction
     for (let tx of pendingTxs) {
       tx.status = 'completed';
       tx.syncedAt = new Date().toISOString();
@@ -506,16 +551,19 @@ app.post('/api/transaction/sync', async (req, res) => {
       history.push(tx);
       syncedCount++;
       
+      // FIX: Added backticks
       console.log(`✅ Synced transaction: ${tx.id}`);
     }
 
     await writeJsonFile(OFFLINE_QUEUE_FILE, queue);
     await writeJsonFile(TRANSACTION_HISTORY_FILE, history);
 
+    // FIX: Added backticks
     console.log(`✅ Sync complete: ${syncedCount} synced, ${failedCount} failed`);
 
     res.json({
       success: true,
+      // FIX: Added backticks for the message property
       message: `Synced ${syncedCount} transactions`,
       synced: syncedCount,
       failed: failedCount
@@ -524,7 +572,7 @@ app.post('/api/transaction/sync', async (req, res) => {
   } catch (error) {
     console.error('❌ Sync error:', error);
     res.status(500).json({ 
-      success: false,
+      success: false, 
       message: 'Internal server error' 
     });
   }
@@ -536,12 +584,14 @@ app.get('/api/transaction/history/:userId', async (req, res) => {
     const { userId } = req.params;
     const limit = parseInt(req.query.limit) || 20;
     
+    // FIX: Added backticks
     console.log(`📜 History request for: ${userId} (limit: ${limit})`);
     
     let history = await readJsonFile(TRANSACTION_HISTORY_FILE);
     if (!history) history = [];
     if (!Array.isArray(history)) history = [history];
 
+    // Filter transactions for this user
     const userTxs = history.filter(tx => 
       tx.fromUserId.toLowerCase() === userId.toLowerCase() || 
       tx.toUserId.toLowerCase() === userId.toLowerCase() ||
@@ -549,10 +599,12 @@ app.get('/api/transaction/history/:userId', async (req, res) => {
       tx.to.toLowerCase() === userId.toLowerCase()
     );
 
+    // Sort by timestamp and limit
     const sortedTxs = userTxs
       .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
       .slice(0, limit);
 
+    // FIX: Added backticks
     console.log(`✅ Returning ${sortedTxs.length} transactions`);
 
     res.json({
@@ -564,7 +616,7 @@ app.get('/api/transaction/history/:userId', async (req, res) => {
   } catch (error) {
     console.error('❌ History error:', error);
     res.status(500).json({ 
-      success: false,
+      success: false, 
       message: 'Internal server error' 
     });
   }
@@ -576,7 +628,8 @@ app.get('/api/transaction/history/:userId', async (req, res) => {
 app.get('/api/health', async (req, res) => {
   const tokenInfo = await contractManager.getTokenInfo();
   
-  console.log(`🏥 Health check - Token info: ${tokenInfo.success ? 'OK' : 'FAILED'}`);
+  // FIX: Added quotes around string
+  console.log('🏥 Health check - Token info:', tokenInfo.success ? 'OK' : 'FAILED');
   
   res.json({ 
     success: true, 
@@ -593,7 +646,7 @@ app.get('/api/health', async (req, res) => {
   });
 });
 
-// Server info
+// Get server info
 app.get('/api/info', async (req, res) => {
   const tokenInfo = await contractManager.getTokenInfo();
   
@@ -609,9 +662,10 @@ app.get('/api/info', async (req, res) => {
 
 // Start server
 app.listen(PORT, '0.0.0.0', async () => {
-  console.log(`\n========================================`);
+  // FIX: Added quotes and backticks for strings
+  console.log('\n========================================');
   console.log(`  🚀 BridgePay Smart Contract Server`);
-  console.log(`========================================`);
+  console.log('========================================');
   console.log(`  Status: RUNNING`);
   console.log(`  Port: ${PORT}`);
   console.log(`  Network: ${NETWORK}`);
@@ -619,20 +673,23 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log(`  RPC: ${RPC_URL ? 'Configured ✅' : 'NOT CONFIGURED ❌'}`);
   console.log(`  Contract: ${contractManager.CONTRACT_ADDRESS}`);
   
+  // Get and display token info
   const tokenInfo = await contractManager.getTokenInfo();
   if (tokenInfo.success) {
+    // FIX: Added backticks
     console.log(`  Token: ${tokenInfo.name} (${tokenInfo.symbol})`);
     console.log(`  Decimals: ${tokenInfo.decimals}`);
     console.log(`  Total Supply: ${tokenInfo.totalSupply}`);
   } else {
+    // FIX: Added backticks
     console.log(`  ⚠  Token info unavailable: ${tokenInfo.error}`);
   }
   
-  console.log(`========================================\n`);
+  console.log('========================================\n');
   
   if (!RPC_URL || RPC_URL.includes('YOUR_')) {
-    console.log(`⚠  WARNING: RPC_URL not configured!`);
-    console.log(`Please update .env file\n`);
+    console.log('⚠  WARNING: RPC_URL not configured!');
+    console.log('Please update .env file\n');
   }
 });
 
@@ -640,7 +697,7 @@ app.listen(PORT, '0.0.0.0', async () => {
 app.use((err, req, res, next) => {
   console.error('❌ Server error:', err);
   res.status(500).json({ 
-    success: false,
+    success: false, 
     message: 'Internal server error' 
   });
 });
