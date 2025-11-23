@@ -75,7 +75,7 @@ async function getTokenBalance(address) {
         
         const balanceFormatted = ethers.formatUnits(balance, decimals);
         
-        console.log(`Token balance for ${address}: ${balanceFormatted}`);
+        console.log(Token balance for ${address}: ${balanceFormatted});
         
         return {
             success: true,
@@ -124,7 +124,7 @@ async function transferTokens(fromPrivateKey, toAddress, amount) {
         // Convert amount to token units (considering decimals)
         const amountInUnits = ethers.parseUnits(amount.toString(), decimals);
         
-        console.log(`Transferring ${amount} tokens from ${wallet.address} to ${toAddress}...`);
+        console.log(Transferring ${amount} tokens from ${wallet.address} to ${toAddress}...);
         
         // Check balance first
         const balance = await contract.balanceOf(wallet.address);
@@ -140,11 +140,11 @@ async function transferTokens(fromPrivateKey, toAddress, amount) {
         
         // Execute transfer
         const tx = await contract.transfer(toAddress, amountInUnits);
-        console.log(`Transaction sent: ${tx.hash}`);
+        console.log(Transaction sent: ${tx.hash});
         console.log('Waiting for confirmation...');
         
         const receipt = await tx.wait();
-        console.log(`✅ Transaction confirmed in block ${receipt.blockNumber}`);
+        console.log(✅ Transaction confirmed in block ${receipt.blockNumber});
         
         return {
             success: true,
@@ -170,13 +170,13 @@ async function mintTokens(toAddress, amount) {
         const decimals = await contract.decimals();
         const amountInUnits = ethers.parseUnits(amount.toString(), decimals);
         
-        console.log(`Minting ${amount} tokens to ${toAddress}...`);
+        console.log(Minting ${amount} tokens to ${toAddress}...);
         
         const tx = await contract.mint(toAddress, amountInUnits);
-        console.log(`Mint transaction sent: ${tx.hash}`);
+        console.log(Mint transaction sent: ${tx.hash});
         
         const receipt = await tx.wait();
-        console.log(`✅ Mint confirmed in block ${receipt.blockNumber}`);
+        console.log(✅ Mint confirmed in block ${receipt.blockNumber});
         
         return {
             success: true,
@@ -195,9 +195,9 @@ async function mintTokens(toAddress, amount) {
 }
 
 // Give initial tokens to new users
-async function fundNewUser(address, initialAmount = 5000) {
+async function fundNewUser(address, initialAmount = 500) {
     try {
-        console.log(`Funding new user ${address} with ${initialAmount} tokens...`);
+        console.log(Funding new user ${address} with ${initialAmount} tokens...);
         
         // Try to mint tokens
         const result = await mintTokens(address, initialAmount);
