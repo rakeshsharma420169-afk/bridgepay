@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BridgePay Admin - Fund Users</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            margin: 10px 0;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button {
+            width: 100%;
+            padding: 15px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 18px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #5568d3;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>💰 BridgePay Admin Panel</h1>
+        
+        <div class="info">
+            <strong>Server:</strong> https://bridgepay-sl4r.onrender.com<br>
+            <strong>Network:</strong> Sepolia Testnet
+        </div>
+
+        <label><strong>User Address:</strong></label>
+        <input type="text" id="address" placeholder="0x..." value="0xF7503E0ebDB57a8D9A6ad40341A73248dC7b2a60">
+
+        <label><strong>Amount (ETH):</strong></label>
+        <input type="number" id="amount" placeholder="0.1" value="0.1" step="0.01">
+
+        <label><strong>Admin Secret:</strong></label>
+        <input type="password" id="secret" placeholder="your-admin-secret">
+
+        <button onclick="fundUser()">💸 Fund User</button>
+        <button onclick="checkBalance()" style="background: #28a745;">📊 Check Balance</button>
+
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        const BASE_URL = 'https://bridgepay-sl4r.onrender.com';
+
+        async function fundUser() {
+            const address = document.getElementById('address').value;
+            const amount = document.getElementById('amount').value;
+            const secret = document.getElementById('secret').value;
+            const result = document.getElementById('result');
+
+            if (!address || !amount || !secret) {
+                showResult('Please fill all fields', 'error');
+                return;
+            }
+
+            showResult('Funding user... Please wait...', 'info');
+
+            try {
+                const response = await fetch(`${BASE_URL}/admin/fund`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ address, amountETH: amount, secret })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showResult(
+                        `✅ Success!\n` +
+                        `Address: ${data.address}\n` +
+                        `Added: ${data.amountAdded} ETH\n` +
+                        `New Balance: ${data.newBalance} ETH\n` +
+                        `TX Hash: ${data.txHash}`,
+                        'success'
+                    );
+                } else {
+                    showResult(`❌ Error: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function checkBalance() {
+            const address = document.getElementById('address').value;
+            const result = document.getElementById('result');
+
+            if (!address) {
+                showResult('Please enter an address', 'error');
+                return;
+            }
+
+            showResult('Checking balance...', 'info');
+
+            try {
+                const response = await fetch(`${BASE_URL}/balance/${address}`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    showResult(
+                        `📊 Balance Information:\n` +
+                        `Address: ${data.address}\n` +
+                        `Balance: ${data.balanceETH} ETH`,
+                        'success'
+                    );
+                } else {
+                    showResult(`❌ Error: ${data.error}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ Error: ${error.message}`, 'error');
+            }
+        }
+
+        function showResult(message, type) {
+            const result = document.getElementById('result');
+            result.className = 'result ' + type;
+            result.style.display = 'block';
+            result.innerText = message;
+        }
+    </script>
+</body>
+</html>
