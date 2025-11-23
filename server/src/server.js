@@ -1,210 +1,646 @@
-// Smart Contract Manager for BridgePay Token
-const { ethers } = require('ethers');
+const express = require('express');
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const fs = require('fs').promises;
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
+const accountManager = require('./accountManager');
+const contractManager = require('./contractManager');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.use(cors());
+app.use(bodyParser.json());
+
+// File paths
+const USERS_FILE = path.join(__dirname, '..', 'blockchain_users.json');
+const OFFLINE_QUEUE_FILE = path.join(__dirname, '..', 'offline_transactions.json');
+const TRANSACTION_HISTORY_FILE = path.join(__dirname, '..', 'transaction_history.json');
+const CONFIG_FILE = path.join(__dirname, '..', 'blockchain_config.json');
+
+// RPC URL from environment
 const RPC_URL = process.env.RPC_URL;
-const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
-const ADMIN_PRIVATE_KEY = process.env.PRIVATE_KEY;
+const NETWORK = process.env.NETWORK || 'localhost';
+const CHAIN_ID = process.env.CHAIN_ID || 31337;
 
-// Standard ERC20 Token ABI (works with most token contracts)
-const TOKEN_ABI = [
-    "function name() view returns (string)",
-    "function symbol() view returns (string)",
-    "function decimals() view returns (uint8)",
-    "function totalSupply() view returns (uint256)",
-    "function balanceOf(address) view returns (uint256)",
-    "function transfer(address to, uint256 amount) returns (bool)",
-    "function allowance(address owner, address spender) view returns (uint256)",
-    "function approve(address spender, uint256 amount) returns (bool)",
-    "function transferFrom(address from, address to, uint256 amount) returns (bool)",
-    "event Transfer(address indexed from, address indexed to, uint256 value)",
-    "event Approval(address indexed owner, address indexed spender, uint256 value)",
+// Helper function to read JSON file
+async function readJsonFile(filePath) {
+  try {
+    const data = await fs.readFile(filePath, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+}
+
+// Helper function to write JSON file
+async function writeJsonFile(filePath, data) {
+  await fs.writeFile(filePath, JSON.stringify(data, null, 4), 'utf8');
+}
+
+// ===== AUTHENTICATION ENDPOINTS =====
+
+// Login endpoint
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { userId, password } = req.body;
     
-    "function mint(address to, uint256 amount) returns (bool)",
-    "function burn(uint256 amount) returns (bool)"
-];
-
-function getContract() {
-    const provider = new ethers.JsonRpcProvider(RPC_URL);
-    const contract = new ethers.Contract(CONTRACT_ADDRESS, TOKEN_ABI, provider);
-    return { provider, contract };
-}
-
-function getContractWithSigner(privateKey) {
-    const provider = new ethers.JsonRpcProvider(RPC_URL);
-    const wallet = new ethers.Wallet(privateKey, provider);
-    const contract = new ethers.Contract(CONTRACT_ADDRESS, TOKEN_ABI, wallet);
-    return { provider, wallet, contract };
-}
-
-async function getTokenInfo() {
-    try {
-        const { contract } = getContract();
-        
-        const name = await contract.name();
-        const symbol = await contract.symbol();
-        const decimals = await contract.decimals();
-        const totalSupply = await contract.totalSupply();
-        
-        return {
-            success: true,
-            name,
-            symbol,
-            decimals: Number(decimals),
-            totalSupply: ethers.formatUnits(totalSupply, decimals)
-        };
-    } catch (error) {
-        console.error('Error getting token info:', error);
-        return {
-            success: false,
-            error: error.message
-        };
+    console.log(`📝 Login attempt for: ${userId}`);
+    
+    if (!userId || !password) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'User ID and password are required' 
+      });
     }
-}
 
-async function getTokenBalance(address) {
-    try {
-        const { contract } = getContract();
-        const balance = await contract.balanceOf(address);
-        const decimals = await contract.decimals();
-        
-        const balanceFormatted = ethers.formatUnits(balance, decimals);
-        
-        console.log(`Token balance for ${address}: ${balanceFormatted}`);
-        
-        return {
-            success: true,
-            balance: parseFloat(balanceFormatted),
-            balanceRaw: balance.toString(),
-            decimals: Number(decimals)
-        };
-    } catch (error) {
-        console.error('Error getting token balance:', error);
-        return {
-            success: false,
-            balance: 0,
-            error: error.message
-        };
+    const users = await readJsonFile(USERS_FILE);
+    
+    if (!users) {
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Users database not found' 
+      });
     }
-}
 
-async function getEthBalance(address) {
-    try {
-        const { provider } = getContract();
-        const balance = await provider.getBalance(address);
-        const balanceFormatted = ethers.formatEther(balance);
-        
-        return {
-            success: true,
-            balance: parseFloat(balanceFormatted),
-            balanceWei: balance.toString()
-        };
-    } catch (error) {
-        console.error('Error getting ETH balance:', error);
-        return {
-            success: false,
-            balance: 0,
-            error: error.message
-        };
+    const userEntry = Object.entries(users).find(([key, value]) => {
+      return key.toLowerCase() === userId.toLowerCase() || 
+             value.address.toLowerCase() === userId.toLowerCase();
+    });
+
+    if (!userEntry) {
+      console.log(`❌ User not found: ${userId}`);
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
     }
-}
 
-async function transferTokens(fromPrivateKey, toAddress, amount) {
-    try {
-        const { wallet, contract } = getContractWithSigner(fromPrivateKey);
-        const decimals = await contract.decimals();
-        
-        const amountInUnits = ethers.parseUnits(amount.toString(), decimals);
-        
-        console.log(`Transferring ${amount} tokens from ${wallet.address} to ${toAddress}...`);
-        
-        const balance = await contract.balanceOf(wallet.address);
-        if (balance < amountInUnits) throw new Error('Insufficient token balance');
-        
-        const ethBalance = await wallet.provider.getBalance(wallet.address);
-        if (ethBalance === 0n) throw new Error('Insufficient ETH for gas fees');
-        
-        const tx = await contract.transfer(toAddress, amountInUnits);
-        console.log(`Transaction sent: ${tx.hash}`);
-        console.log(`Waiting for confirmation...`);
-        
-        const receipt = await tx.wait();
-        console.log(`✅ Transaction confirmed in block ${receipt.blockNumber}`);
-        
-        return {
-            success: true,
-            txHash: tx.hash,
-            blockNumber: receipt.blockNumber,
-            from: wallet.address,
-            to: toAddress,
-            amount
-        };
-    } catch (error) {
-        console.error('Transfer error:', error);
-        return {
-            success: false,
-            error: error.message
-        };
+    const [username, userData] = userEntry;
+
+    const loginResult = await accountManager.login(username, password);
+    
+    if (!loginResult.success) {
+      console.log(`❌ Invalid password for: ${username}`);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid password'
+      });
     }
-}
 
-async function mintTokens(toAddress, amount) {
-    try {
-        const { wallet, contract } = getContractWithSigner(ADMIN_PRIVATE_KEY);
-        const decimals = await contract.decimals();
-        const amountInUnits = ethers.parseUnits(amount.toString(), decimals);
-        
-        console.log(`Minting ${amount} tokens to ${toAddress}...`);
-        
-        const tx = await contract.mint(toAddress, amountInUnits);
-        console.log(`Mint transaction sent: ${tx.hash}`);
-        
-        const receipt = await tx.wait();
-        console.log(`✅ Mint confirmed in block ${receipt.blockNumber}`);
-        
-        return {
-            success: true,
-            txHash: tx.hash,
-            blockNumber: receipt.blockNumber,
-            to: toAddress,
-            amount
-        };
-    } catch (error) {
-        console.error('Mint error:', error);
-        return {
-            success: false,
-            error: error.message
-        };
+    console.log(`✅ Login successful for: ${username}`);
+
+    res.json({
+      success: true,
+      message: 'Login successful',
+      user: {
+        username: username,
+        address: userData.address,
+        userId: userData.address,
+        fullName: userData.fullName || username,
+        mobile: userData.mobile || '',
+        email: userData.email || '',
+        createdAt: userData.createdAt
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Login error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Internal server error' 
+    });
+  }
+});
+
+// Register new Ethereum account
+app.post('/api/auth/register-celo', async (req, res) => {
+  try {
+    const { username, password, fullName, mobile, email } = req.body;
+    
+    console.log(`📝 Registration attempt for: ${username}`);
+    
+    if (!username || !password || !fullName || !mobile || !email) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'All fields are required' 
+      });
     }
-}
 
-async function fundNewUser(address, initialAmount = 500) {
-    try {
-        console.log(`Funding new user ${address} with ${initialAmount} tokens...`);
-        
-        const result = await mintTokens(address, initialAmount);
-        
-        if (!result.success) {
-            console.log('Minting failed, trying transfer from admin...');
-            return await transferTokens(ADMIN_PRIVATE_KEY, address, initialAmount);
-        }
-        
-        return result;
-    } catch (error) {
-        console.error('Fund user error:', error);
-        return {
-            success: false,
-            error: error.message
-        };
+    let users = await readJsonFile(USERS_FILE);
+    if (!users) users = {};
+
+    if (users[username]) {
+      console.log(`❌ User already exists: ${username}`);
+      return res.status(409).json({ 
+        success: false, 
+        message: 'User already exists' 
+      });
     }
-}
 
-module.exports = {
-    getTokenInfo,
-    getTokenBalance,
-    getEthBalance,
-    transferTokens,
-    mintTokens,
-    fundNewUser,
-    CONTRACT_ADDRESS
-};
+    console.log(`🔧 Creating Ethereum account for: ${username}`);
+
+    const result = await accountManager.createAccount(username, password);
+    
+    if (!result.success) {
+      console.log(`❌ Account creation failed: ${result.error}`);
+      return res.status(500).json({
+        success: false,
+        message: result.error || 'Failed to create account'
+      });
+    }
+
+    users = await readJsonFile(USERS_FILE);
+    
+    if (users[username]) {
+      users[username].fullName = fullName;
+      users[username].mobile = mobile;
+      users[username].email = email;
+      await writeJsonFile(USERS_FILE, users);
+      
+      console.log(`💰 Funding new user ${result.address} with 500 tokens...`);
+      const fundResult = await contractManager.fundNewUser(result.address, 500);
+      
+      if (fundResult.success) {
+        console.log(`✅ Successfully funded ${result.address} with 500 tokens`);
+        console.log(`📝 Transaction hash: ${fundResult.txHash}`);
+      } else {
+        console.log(`⚠ Could not fund user: ${fundResult.error}`);
+      }
+    }
+
+    console.log(`✅ Account created successfully: ${result.address}`);
+
+    res.json({
+      success: true,
+      message: 'Ethereum blockchain account created successfully',
+      user: {
+        username: username,
+        address: result.address,
+        userId: result.address,
+        fullName: fullName,
+        mobile: mobile,
+        email: email,
+        createdAt: users[username].createdAt
+      },
+      mnemonic: result.mnemonic
+    });
+
+  } catch (error) {
+    console.error('❌ Registration error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to create account: ' + error.message
+    });
+  }
+});
+
+// ===== BALANCE ENDPOINTS =====
+
+app.get('/api/balance/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    console.log(`💰 Balance request for: ${userId}`);
+    
+    const users = await readJsonFile(USERS_FILE);
+    
+    if (!users) {
+      console.log(`❌ Users database not found`);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Users database not found' 
+      });
+    }
+
+    const userEntry = Object.entries(users).find(([key, value]) => {
+      return key.toLowerCase() === userId.toLowerCase() || 
+             value.address.toLowerCase() === userId.toLowerCase();
+    });
+
+    if (!userEntry) {
+      console.log(`❌ User not found: ${userId}`);
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
+    }
+
+    const [username, userData] = userEntry;
+
+    console.log(`🔍 Fetching token balance for address: ${userData.address}`);
+
+    const balanceResult = await contractManager.getTokenBalance(userData.address);
+    
+    console.log(`📊 Balance result: ${JSON.stringify(balanceResult)}`);
+    
+    if (!balanceResult.success) {
+      console.log(`⚠ Balance fetch failed, returning 0: ${balanceResult.error}`);
+      return res.json({
+        success: true,
+        balance: 0.0,
+        address: userData.address,
+        userId: userData.address
+      });
+    }
+
+    console.log(`✅ Balance fetched successfully: ${balanceResult.balance} tokens`);
+
+    res.json({
+      success: true,
+      balance: balanceResult.balance,
+      address: userData.address,
+      userId: userData.address
+    });
+
+  } catch (error) {
+    console.error('❌ Balance error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error: ' + error.message
+    });
+  }
+});
+
+// ===== TRANSACTION ENDPOINTS =====
+
+app.post('/api/transaction/send', async (req, res) => {
+  try {
+    const { fromUserId, toUserId, amount } = req.body;
+    
+    console.log(`💸 Transaction request: ${fromUserId} -> ${toUserId} (${amount})`);
+    
+    if (!fromUserId || !toUserId || !amount) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'All fields are required' 
+      });
+    }
+
+    if (amount <= 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Amount must be greater than 0' 
+      });
+    }
+
+    const users = await readJsonFile(USERS_FILE);
+    
+    if (!users) {
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Users database not found' 
+      });
+    }
+
+    const fromUserEntry = Object.entries(users).find(([key, value]) => {
+      return value.address.toLowerCase() === fromUserId.toLowerCase();
+    });
+
+    const toUserEntry = Object.entries(users).find(([key, value]) => {
+      return value.address.toLowerCase() === toUserId.toLowerCase();
+    });
+
+    if (!fromUserEntry) {
+      console.log(`❌ Sender not found: ${fromUserId}`);
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Sender not found' 
+      });
+    }
+
+    if (!toUserEntry) {
+      console.log(`❌ Receiver not found: ${toUserId}`);
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Receiver not found' 
+      });
+    }
+
+    const [fromUsername, fromUserData] = fromUserEntry;
+    const [toUsername, toUserData] = toUserEntry;
+
+    const transaction = {
+      id: uuidv4(),
+      from: fromUserData.address,
+      fromUserId: fromUserData.address,
+      to: toUserData.address,
+      toUserId: toUserData.address,
+      amount: amount,
+      timestamp: new Date().toISOString(),
+      status: 'completed',
+      type: 'online',
+      txHash: null,
+      contractAddress: contractManager.CONTRACT_ADDRESS
+    };
+
+    let history = await readJsonFile(TRANSACTION_HISTORY_FILE);
+    if (!history) history = [];
+    if (!Array.isArray(history)) history = [history];
+    
+    history.push(transaction);
+    await writeJsonFile(TRANSACTION_HISTORY_FILE, history);
+
+    console.log(`✅ Transaction recorded: ${fromUserData.address} -> ${toUserData.address} (${amount})`);
+
+    res.json({
+      success: true,
+      message: 'Transaction completed successfully',
+      transaction: transaction
+    });
+
+  } catch (error) {
+    console.error('❌ Transaction error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error' 
+    });
+  }
+});
+
+// Queue offline transaction
+app.post('/api/transaction/queue', async (req, res) => {
+  try {
+    const { fromUserId, toUserId, amount } = req.body;
+    
+    console.log(`📋 Queuing transaction: ${fromUserId} -> ${toUserId} (${amount})`);
+    
+    if (!fromUserId || !toUserId || !amount) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'All fields are required' 
+      });
+    }
+
+    const users = await readJsonFile(USERS_FILE);
+    
+    if (!users) {
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Users database not found' 
+      });
+    }
+
+    const fromUserEntry = Object.entries(users).find(([key, value]) => {
+      return value.address.toLowerCase() === fromUserId.toLowerCase();
+    });
+
+    const toUserEntry = Object.entries(users).find(([key, value]) => {
+      return value.address.toLowerCase() === toUserId.toLowerCase();
+    });
+
+    if (!fromUserEntry || !toUserEntry) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
+    }
+
+    const [fromUsername, fromUserData] = fromUserEntry;
+    const [toUsername, toUserData] = toUserEntry;
+
+    const transaction = {
+      id: uuidv4(),
+      from: fromUserData.address,
+      fromUser: fromUsername,
+      fromUserId: fromUserData.address,
+      to: toUserData.address,
+      toUserId: toUserData.address,
+      amount: amount,
+      timestamp: new Date().toISOString(),
+      status: 'pending'
+    };
+
+    let queue = await readJsonFile(OFFLINE_QUEUE_FILE);
+    if (!queue) queue = [];
+    if (!Array.isArray(queue)) queue = [queue];
+    
+    queue.push(transaction);
+    await writeJsonFile(OFFLINE_QUEUE_FILE, queue);
+
+    console.log(`✅ Transaction queued: ${transaction.id}`);
+
+    res.json({
+      success: true,
+      message: 'Transaction queued for offline processing',
+      transactionId: transaction.id
+    });
+
+  } catch (error) {
+    console.error('❌ Queue error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error' 
+    });
+  }
+});
+
+// Get pending transactions
+app.get('/api/transaction/pending/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    let queue = await readJsonFile(OFFLINE_QUEUE_FILE);
+    if (!queue) queue = [];
+    if (!Array.isArray(queue)) queue = [queue];
+
+    const userPendingTxs = queue.filter(tx => 
+      tx.status === 'pending' && 
+      (tx.fromUserId.toLowerCase() === userId.toLowerCase() || 
+       tx.from.toLowerCase() === userId.toLowerCase())
+    );
+
+    res.json({
+      success: true,
+      count: userPendingTxs.length,
+      transactions: userPendingTxs
+    });
+
+  } catch (error) {
+    console.error('❌ Pending transactions error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Internal server error' 
+    });
+  }
+});
+
+app.post('/api/transaction/sync', async (req, res) => {
+  try {
+    console.log(`🔄 Syncing offline transactions...`);
+    
+    let queue = await readJsonFile(OFFLINE_QUEUE_FILE);
+    if (!queue) queue = [];
+    if (!Array.isArray(queue)) queue = [queue];
+
+    const pendingTxs = queue.filter(tx => tx.status === 'pending');
+    
+    if (pendingTxs.length === 0) {
+      console.log(`✅ No pending transactions to sync`);
+      return res.json({
+        success: true,
+        message: 'No pending transactions to sync',
+        synced: 0,
+        failed: 0
+      });
+    }
+
+    let syncedCount = 0;
+    let failedCount = 0;
+    let history = await readJsonFile(TRANSACTION_HISTORY_FILE);
+    if (!history) history = [];
+    if (!Array.isArray(history)) history = [history];
+
+    for (let tx of pendingTxs) {
+      tx.status = 'completed';
+      tx.syncedAt = new Date().toISOString();
+      tx.type = 'offline-synced';
+      
+      history.push(tx);
+      syncedCount++;
+      
+      console.log(`✅ Synced transaction: ${tx.id}`);
+    }
+
+    await writeJsonFile(OFFLINE_QUEUE_FILE, queue);
+    await writeJsonFile(TRANSACTION_HISTORY_FILE, history);
+
+    console.log(`✅ Sync complete: ${syncedCount} synced, ${failedCount} failed`);
+
+    res.json({
+      success: true,
+      message: `Synced ${syncedCount} transactions`,
+      synced: syncedCount,
+      failed: failedCount
+    });
+
+  } catch (error) {
+    console.error('❌ Sync error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Internal server error' 
+    });
+  }
+});
+
+// Get transaction history
+app.get('/api/transaction/history/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const limit = parseInt(req.query.limit) || 20;
+    
+    console.log(`📜 History request for: ${userId} (limit: ${limit})`);
+    
+    let history = await readJsonFile(TRANSACTION_HISTORY_FILE);
+    if (!history) history = [];
+    if (!Array.isArray(history)) history = [history];
+
+    const userTxs = history.filter(tx => 
+      tx.fromUserId.toLowerCase() === userId.toLowerCase() || 
+      tx.toUserId.toLowerCase() === userId.toLowerCase() ||
+      tx.from.toLowerCase() === userId.toLowerCase() || 
+      tx.to.toLowerCase() === userId.toLowerCase()
+    );
+
+    const sortedTxs = userTxs
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+      .slice(0, limit);
+
+    console.log(`✅ Returning ${sortedTxs.length} transactions`);
+
+    res.json({
+      success: true,
+      count: sortedTxs.length,
+      transactions: sortedTxs
+    });
+
+  } catch (error) {
+    console.error('❌ History error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Internal server error' 
+    });
+  }
+});
+
+// ===== UTILITY ENDPOINTS =====
+
+// Health check
+app.get('/api/health', async (req, res) => {
+  const tokenInfo = await contractManager.getTokenInfo();
+  
+  console.log(`🏥 Health check - Token info: ${tokenInfo.success ? 'OK' : 'FAILED'}`);
+  
+  res.json({ 
+    success: true, 
+    message: 'Server is running',
+    network: NETWORK,
+    chainId: CHAIN_ID,
+    contractAddress: contractManager.CONTRACT_ADDRESS,
+    token: tokenInfo.success ? {
+      name: tokenInfo.name,
+      symbol: tokenInfo.symbol,
+      decimals: tokenInfo.decimals
+    } : null,
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Server info
+app.get('/api/info', async (req, res) => {
+  const tokenInfo = await contractManager.getTokenInfo();
+  
+  res.json({
+    success: true,
+    network: NETWORK,
+    chainId: parseInt(CHAIN_ID),
+    rpcConfigured: !!RPC_URL,
+    contractAddress: contractManager.CONTRACT_ADDRESS,
+    token: tokenInfo.success ? tokenInfo : null
+  });
+});
+
+// Start server
+app.listen(PORT, '0.0.0.0', async () => {
+  console.log(`\n========================================`);
+  console.log(`  🚀 BridgePay Smart Contract Server`);
+  console.log(`========================================`);
+  console.log(`  Status: RUNNING`);
+  console.log(`  Port: ${PORT}`);
+  console.log(`  Network: ${NETWORK}`);
+  console.log(`  Chain ID: ${CHAIN_ID}`);
+  console.log(`  RPC: ${RPC_URL ? 'Configured ✅' : 'NOT CONFIGURED ❌'}`);
+  console.log(`  Contract: ${contractManager.CONTRACT_ADDRESS}`);
+  
+  const tokenInfo = await contractManager.getTokenInfo();
+  if (tokenInfo.success) {
+    console.log(`  Token: ${tokenInfo.name} (${tokenInfo.symbol})`);
+    console.log(`  Decimals: ${tokenInfo.decimals}`);
+    console.log(`  Total Supply: ${tokenInfo.totalSupply}`);
+  } else {
+    console.log(`  ⚠  Token info unavailable: ${tokenInfo.error}`);
+  }
+  
+  console.log(`========================================\n`);
+  
+  if (!RPC_URL || RPC_URL.includes('YOUR_')) {
+    console.log(`⚠  WARNING: RPC_URL not configured!`);
+    console.log(`Please update .env file\n`);
+  }
+});
+
+// Error handling
+app.use((err, req, res, next) => {
+  console.error('❌ Server error:', err);
+  res.status(500).json({ 
+    success: false,
+    message: 'Internal server error' 
+  });
+});
